@@ -273,7 +273,20 @@ def generate_demo_data(rng):
             if rng.random() < replace_chance:
                 for _ in range(rng.randint(1, 2)):
                     plant_name, category, spec, unit = rng.choice(PLANT_POOL)
-                    unit_price = round(rng.uniform(8, 220), 2)
+                    # 苗木来源：自产苗走内部核算价，外购苗按供应商报价，少量不登记来源
+                    source_roll = rng.random()
+                    if source_roll < 0.4:
+                        seedling_source = "self_grown"
+                        supplier = "本单位苗圃"
+                        unit_price = round(rng.uniform(5, 120), 2)
+                    elif source_roll < 0.85:
+                        seedling_source = "purchased"
+                        supplier = rng.choice(SUPPLIERS)
+                        unit_price = round(rng.uniform(8, 220), 2)
+                    else:
+                        seedling_source = None
+                        supplier = None
+                        unit_price = round(rng.uniform(8, 220), 2) if rng.random() < 0.5 else None
                     PlantReplacementService.create({
                         "green_space_id": space.id,
                         "maintenance_record_id": record.id,
@@ -285,7 +298,8 @@ def generate_demo_data(rng):
                         "reason": rng.choice(REASONS),
                         "old_plant_status": rng.choice(OLD_STATUS),
                         "replace_date": record_date + timedelta(days=rng.randint(0, 5)),
-                        "supplier": rng.choice(SUPPLIERS),
+                        "seedling_source": seedling_source,
+                        "supplier": supplier,
                         "unit_price": unit_price,
                         "operator": rng.choice(WORKERS),
                     })

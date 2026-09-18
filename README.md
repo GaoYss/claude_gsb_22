@@ -15,7 +15,7 @@
 | 绿地台账 | `/green-spaces` | 绿地建档（编号自动生成）、按行政区/类型/等级/状态/关键字检索、档案详情（概览 + 近期任务/记录/更换 + 更换原因汇总）、删除保护 |
 | 养护任务 | `/tasks` | 任务登记（编号按日生成）、按状态/类型/优先级/绿地/计划日期区间/逾期筛选、状态流转（待执行→进行中→已完成/已取消）、任务详情与执行进度 |
 | 养护记录 | `/records` | 记录录入（可关联任务，也可登记日常巡查）、工时/天气/材料/质量评定、质量分布与工时汇总、记录详情 |
-| 绿植更换 | `/replacements` | 更换登记（植株、类别、规格、数量、原因、原植株状况、供苗单位、单价与金额）、按类别/原因统计与占比、按绿地/日期区间筛选 |
+| 绿植更换 | `/replacements` | 更换登记（植株、类别、规格、数量、原因、原植株状况、苗木来源、供苗单位、单价与金额）、按类别/原因统计与占比、按来源对比平均单价与使用数量、来源缺失标记、按绿地/日期区间筛选 |
 
 ## 二、目录结构
 
@@ -89,7 +89,7 @@ docker compose up -d --build
 - 后端接口：<http://localhost:5000/api/v1/meta/health>
 - PostgreSQL：`localhost:5432`（容器内 `db:5432`）
 
-首次启动会自动建表；`SEED_DEMO_DATA=true` 时会写入一批演示数据（7 处绿地、15 条任务、22 条养护记录、8 条更换记录）。停止与清理：
+首次启动会自动建表；`SEED_DEMO_DATA=true` 时会写入一批演示数据（7 处绿地、21 条任务、25 条养护记录、6 条更换记录）。停止与清理：
 
 ```bash
 docker compose down            # 停止容器，保留数据库卷
@@ -156,9 +156,9 @@ cd frontend && npm run build && npm run preview
 | GET/POST | `/maintenance-records` | 记录列表（`task_id`/`green_space_id`/`quality_result`/`weather`/`unlinked`/日期区间，返回汇总） / 录入记录 |
 | GET/PUT/DELETE | `/maintenance-records/{id}` | 记录详情（含关联更换记录） / 更新 / 删除 |
 | GET | `/maintenance-records/summary` | 记录汇总（条数、工时、质量分布） |
-| GET/POST | `/plant-replacements` | 更换记录列表（`green_space_id`/`plant_category`/`reason`/日期区间，返回汇总） / 登记更换 |
+| GET/POST | `/plant-replacements` | 更换记录列表（`green_space_id`/`plant_category`/`reason`/`seedling_source`/`source_missing`/日期区间，返回汇总） / 登记更换 |
 | GET/PUT/DELETE | `/plant-replacements/{id}` | 详情 / 更新 / 删除 |
-| GET | `/plant-replacements/summary` | 更换汇总（按植物类别、更换原因） |
+| GET | `/plant-replacements/summary` | 更换汇总（按植物类别、更换原因、苗木来源） |
 | GET | `/statistics/dashboard` | 看板聚合数据（总览 + 分布 + 趋势 + 榜单 + 提醒 + 最近动态） |
 | GET | `/statistics/overview` `/distributions` `/trends` `/ranking` `/reminders` | 看板分项接口 |
 
@@ -173,8 +173,9 @@ cd frontend && npm run build && npm run preview
 3. **绿地归属一致性**：养护记录可只填绿地（日常养护）或只填任务（绿地自动跟随任务）；两者同时提供时必须属于同一绿地。更换记录若关联养护记录，必须是同一绿地的记录。
 4. **日期约束**：养护日期、更换日期不得早于绿地建成日期。
 5. **金额核算**：更换金额 = 数量 × 单价，由后端统一计算；未填单价时金额留空，前端提示补录。
-6. **删除保护**：删除绿地时若已存在任务/记录/更换数据会返回 409 并给出数量明细，需 `force=true` 才级联删除；删除任务时养护记录默认保留（解除关联），避免养护履历丢失。
-7. **字典单一来源**：所有枚举在 `backend/app/constants.py` 定义，前端通过 `/meta/enums` 获取并缓存，前后端不重复维护。
+6. **苗木来源**：更换记录区分自产苗与外购苗，按来源分别登记供苗单位与单价；来源允许留空后补，缺失记录在清单中标记「未登记」并可用 `source_missing` 筛出；汇总按来源对比使用数量、金额与平均单价（平均单价仅统计已登记单价的记录）。
+7. **删除保护**：删除绿地时若已存在任务/记录/更换数据会返回 409 并给出数量明细，需 `force=true` 才级联删除；删除任务时养护记录默认保留（解除关联），避免养护履历丢失。
+8. **字典单一来源**：所有枚举在 `backend/app/constants.py` 定义，前端通过 `/meta/enums` 获取并缓存，前后端不重复维护。
 
 ## 七、数据模型
 
@@ -183,7 +184,7 @@ cd frontend && npm run build && npm run preview
 | `green_space` | 绿地台账 | `code`(唯一)、`name`、`district`、`green_type`、`maintenance_grade`、`area_sqm`、`status`、`manager`、`established_date` |
 | `maintenance_task` | 养护任务 | `task_no`(唯一)、`green_space_id`、`task_type`、`plan_date`、`priority`、`executor`、`status`、`completed_at` |
 | `maintenance_record` | 养护记录 | `record_no`(唯一)、`task_id`(可空)、`green_space_id`、`record_date`、`work_content`、`worker`、`work_hours`、`weather`、`quality_result` |
-| `plant_replacement` | 绿植更换记录 | `replacement_no`(唯一)、`green_space_id`、`maintenance_record_id`(可空)、`plant_name`、`plant_category`、`quantity`、`unit`、`reason`、`unit_price`、`amount` |
+| `plant_replacement` | 绿植更换记录 | `replacement_no`(唯一)、`green_space_id`、`maintenance_record_id`(可空)、`plant_name`、`plant_category`、`quantity`、`unit`、`reason`、`seedling_source`、`supplier`、`unit_price`、`amount` |
 
 绿地删除时任务/记录/更换级联清理；任务与养护记录之间、养护记录与更换记录之间为可空外键（`SET NULL`），保证养护履历可独立留存。
 
@@ -191,10 +192,10 @@ cd frontend && npm run build && npm run preview
 
 ```bash
 cd backend
-python -m pytest              # 52 个用例：接口、校验、跨模块规则、端到端流程
+python -m pytest              # 57 个用例：接口、校验、跨模块规则、端到端流程
 ```
 
-覆盖重点：绿地编号生成与唯一性、枚举与字段校验、列表过滤/排序/分页、任务状态自动流转与手动流转限制、记录删除后的状态回退、更换金额核算、删除保护与强制删除、统计聚合口径一致性、演示数据自洽性。
+覆盖重点：绿地编号生成与唯一性、枚举与字段校验、列表过滤/排序/分页、任务状态自动流转与手动流转限制、记录删除后的状态回退、更换金额核算、苗木来源筛选与按来源对比汇总、删除保护与强制删除、统计聚合口径一致性、演示数据自洽性。
 
 ## 九、常见问题
 

@@ -1,6 +1,12 @@
 """绿植更换记录模型。"""
 
-from ..constants import MEASURE_UNIT, OLD_PLANT_STATUS, PLANT_CATEGORY, REPLACEMENT_REASON
+from ..constants import (
+    MEASURE_UNIT,
+    OLD_PLANT_STATUS,
+    PLANT_CATEGORY,
+    REPLACEMENT_REASON,
+    SEEDLING_SOURCE,
+)
 from ..extensions import db
 from ..utils.dates import format_date, format_datetime
 from ..utils.numbers import to_float
@@ -31,6 +37,7 @@ class PlantReplacement(TimestampMixin, db.Model):
     reason = db.Column(db.String(32), nullable=False, index=True)
     old_plant_status = db.Column(db.String(16))
     replace_date = db.Column(db.Date, nullable=False, index=True)
+    seedling_source = db.Column(db.String(32), index=True)
     supplier = db.Column(db.String(96))
     unit_price = db.Column(amount_column())
     amount = db.Column(amount_column())
@@ -70,6 +77,10 @@ class PlantReplacement(TimestampMixin, db.Model):
                 OLD_PLANT_STATUS.label(self.old_plant_status) if self.old_plant_status else None
             ),
             "replace_date": format_date(self.replace_date),
+            "seedling_source": self.seedling_source,
+            "seedling_source_label": (
+                SEEDLING_SOURCE.label(self.seedling_source) if self.seedling_source else None
+            ),
             "supplier": self.supplier,
             "unit_price": to_float(self.unit_price),
             "amount": to_float(self.amount),

@@ -94,6 +94,80 @@ def test_summary_groups_by_category_and_reason(api, make_replacement):
     assert by_reason["aging"]["quantity"] == 20.0
 
 
+def test_create_replacement_with_seedling_source(api, make_space):
+    space = make_space()
+    data = api.data(api.post("/api/v1/plant-replacements",
+                             replacement_payload(space.id, seedling_source="self_grown",
+                                                 supplier="本单位苗圃")), 201)
+    assert data["seedling_source"] == "self_grown"
+    assert data["seedling_source_label"] == "自产苗"
+
+
+def test_seedling_source_must_be_valid(api, make_space):
+    space = make_space()
+    response = api.post("/api/v1/plant-replacements",
+                        replacement_payload(space.id, seedling_source="imported"))
+    assert response.status_code == 422
+    assert "seedling_source" in response.get_json()["data"]
+
+
+def test_seedling_source_can_be_left_empty(api, make_space):
+    space = make_space()
+    data = api.data(api.post("/api/v1/plant-replacements",
+                             replacement_payload(space.id, seedling_source=None, supplier=None)),
+                    201)
+    assert data["seedling_source"] is None
+    assert data["seedling_source_label"] is None
+
+
+def test_list_filters_by_seedling_source(api, make_replacement):
+    make_replacement(seedling_source="self_grown")
+    make_replacement(seedling_source="purchased")
+    make_replacement()
+
+    data = api.data(api.get("/api/v1/plant-replacements", seedling_source="purchased"))
+    assert data["meta"]["total"] == 1
+    assert data["items"][0]["seedling_source"] == "purchased"
+    assert data["summary"]["missing_source_count"] == 0
+
+    data = api.data(api.get("/api/v1/plant-replacements", source_missing="true"))
+    assert data["meta"]["total"] == 1
+    assert data["items"][0]["seedling_source"] is None
+    assert data["summary"]["missing_source_count"] == 1
+
+
+def test_summary_compares_seedling_sources(api, make_replacement):
+    make_replacement(quantity=10, unit_price=100, seedling_source="self_grown")
+    make_replacement(quantity=20, unit_price=50, seedling_source="self_grown")
+    make_replacement(quantity=5, unit_price=200, seedling_source="purchased")
+    make_replacement(quantity=8, unit_price=None, seedling_source=None)
+
+    data = api.data(api.get("/api/v1/plant-replacements/summary"))
+    assert data["missing_source_count"] == 1
+
+    by_source = {item["value"]: item for item in data["by_source"]}
+
+    self_grown = by_source["self_grown"]
+    assert self_grown["label"] == "自产苗"
+    assert self_grown["count"] == 2
+    assert self_grown["quantity"] == 30.0
+    assert self_grown["amount"] == 2000.0
+    assert self_grown["priced_count"] == 2
+    assert self_grown["avg_unit_price"] == 75.0
+
+    purchased = by_source["purchased"]
+    assert purchased["label"] == "外购苗"
+    assert purchased["quantity"] == 5.0
+    assert purchased["avg_unit_price"] == 200.0
+
+    missing = by_source[None]
+    assert missing["label"] == "未登记"
+    assert missing["count"] == 1
+    assert missing["quantity"] == 8.0
+    assert missing["priced_count"] == 0
+    assert missing["avg_unit_price"] is None
+
+
 def test_list_filters_by_green_space_and_reason(api, make_replacement, make_space):
     space = make_space(name="目标绿地")
     make_replacement(space=space, reason="dead")

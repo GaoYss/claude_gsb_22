@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, or_
 
-from ..constants import ENUM_GROUPS
+from ..constants import ENUM_GROUPS, SEEDLING_SOURCE
 from ..errors import ValidationError
 from ..extensions import db
 from ..models import GreenSpace, MaintenanceRecord, PlantReplacement
@@ -85,6 +85,10 @@ class PlantReplacementService(BaseService):
             query = query.filter(PlantReplacement.plant_category == filters["plant_category"])
         if filters.get("reason"):
             query = query.filter(PlantReplacement.reason == filters["reason"])
+        if filters.get("seedling_source"):
+            query = query.filter(PlantReplacement.seedling_source == filters["seedling_source"])
+        if filters.get("source_missing"):
+            query = query.filter(PlantReplacement.seedling_source.is_(None))
         if filters.get("date_from"):
             query = query.filter(PlantReplacement.replace_date >= filters["date_from"])
         if filters.get("date_to"):
@@ -152,10 +156,48 @@ class PlantReplacementService(BaseService):
             filters,
         ).one()
 
+        by_source = cls._summary_by_source(filters)
+
         return {
             "total_count": totals[0] or 0,
             "total_quantity": to_float(totals[1]) or 0,
             "total_amount": to_float(totals[2]) or 0,
+            "missing_source_count": next(
+                (row["count"] for row in by_source if row["value"] is None), 0
+            ),
             "by_category": _group(PlantReplacement.plant_category, "plant_category"),
             "by_reason": _group(PlantReplacement.reason, "replacement_reason"),
+            "by_source": by_source,
         }
+
+    @classmethod
+    def _summary_by_source(cls, filters):
+        """按苗木来源分组对比：使用数量、金额与平均单价（仅统计已登记单价的记录）。"""
+
+        rows = (
+            cls._apply_filters(
+                db.session.query(
+                    PlantReplacement.seedling_source,
+                    func.count(PlantReplacement.id),
+                    func.coalesce(func.sum(PlantReplacement.quantity), 0),
+                    func.coalesce(func.sum(PlantReplacement.amount), 0),
+                    func.count(PlantReplacement.unit_price),
+                    func.avg(PlantReplacement.unit_price),
+                ),
+                filters,
+            )
+            .group_by(PlantReplacement.seedling_source)
+            .all()
+        )
+        return [
+            {
+                "value": value,
+                "label": SEEDLING_SOURCE.label(value) if value else "未登记",
+                "count": count,
+                "quantity": to_float(quantity) or 0,
+                "amount": to_float(amount) or 0,
+                "priced_count": priced_count,
+                "avg_unit_price": to_float(avg_price),
+            }
+            for value, count, quantity, amount, priced_count, avg_price in rows
+        ]

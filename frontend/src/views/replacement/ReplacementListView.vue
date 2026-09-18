@@ -19,6 +19,10 @@
         <el-select v-model="filters.reason" placeholder="更换原因" clearable @change="search">
           <el-option v-for="item in reasonOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
+        <el-select v-model="filters.seedling_source" placeholder="苗木来源" clearable @change="search">
+          <el-option v-for="item in sourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+        <el-checkbox v-model="filters.source_missing" label="仅看来源缺失" @change="search" />
         <el-date-picker v-model="dateRange" type="daterange" unlink-panels value-format="YYYY-MM-DD"
                         start-placeholder="更换日期起" end-placeholder="更换日期止" @change="onDateChange" />
         <el-button type="primary" :icon="'Search'" @click="search">查询</el-button>
@@ -45,6 +49,9 @@
           共 <strong>{{ meta.total }}</strong> 条更换记录，
           数量合计 <strong>{{ formatNumber(summary?.total_quantity ?? 0) }}</strong>，
           金额合计 <strong>{{ formatCurrency(summary?.total_amount ?? 0) }}</strong>
+          <template v-if="summary?.missing_source_count">
+            ，<span class="missing-source-hint">来源未登记 <strong>{{ summary.missing_source_count }}</strong> 条</span>
+          </template>
         </span>
         <el-button :icon="'Refresh'" text @click="load">刷新</el-button>
       </div>
@@ -84,6 +91,13 @@
         <el-table-column label="更换原因" width="115">
           <template #default="{ row }">
             <EnumTag group="replacement_reason" :value="row.reason" :label="row.reason_label" />
+          </template>
+        </el-table-column>
+        <el-table-column label="苗木来源" width="100">
+          <template #default="{ row }">
+            <EnumTag v-if="row.seedling_source" group="seedling_source"
+                     :value="row.seedling_source" :label="row.seedling_source_label" />
+            <el-tag v-else type="warning" size="small" effect="plain">未登记</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="replace_date" label="更换日期" width="105" />
@@ -136,6 +150,40 @@
       </el-table>
     </div>
 
+    <div class="panel">
+      <div class="table-toolbar">
+        <span class="panel-title">苗木来源对比</span>
+        <span class="summary-text">按当前筛选条件统计，平均单价仅计入已登记单价的记录</span>
+      </div>
+      <el-table :data="summary?.by_source || []" size="small" border empty-text="暂无数据">
+        <el-table-column label="苗木来源" width="140">
+          <template #default="{ row }">
+            <EnumTag v-if="row.value" group="seedling_source" :value="row.value" :label="row.label" />
+            <el-tag v-else type="warning" size="small" effect="plain">未登记</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="count" label="记录条数" width="110" />
+        <el-table-column label="使用数量" width="130">
+          <template #default="{ row }">{{ formatNumber(row.quantity) }}</template>
+        </el-table-column>
+        <el-table-column label="平均单价" width="130">
+          <template #default="{ row }">
+            <template v-if="row.avg_unit_price !== null">{{ formatCurrency(row.avg_unit_price) }}</template>
+            <template v-else>-</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额合计" width="140">
+          <template #default="{ row }">{{ formatCurrency(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column label="数量占比" min-width="200">
+          <template #default="{ row }">
+            <el-progress :percentage="shareOf(row.quantity)" :stroke-width="12"
+                         :color="'#48a17a'" :format="() => `${shareOf(row.quantity)}%`" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
     <ReplacementFormDialog ref="formDialog" @saved="load" />
   </div>
 </template>
@@ -162,6 +210,7 @@ const dateRange = ref([])
 
 const { options: categoryOptions } = useEnumOptions('plant_category')
 const { options: reasonOptions } = useEnumOptions('replacement_reason')
+const { options: sourceOptions } = useEnumOptions('seedling_source')
 
 const { filters, meta, items, summary, loading, load, search, resetFilters, handlePageChange, handleSizeChange } =
   useListQuery(plantReplacementApi.list, {
@@ -170,6 +219,8 @@ const { filters, meta, items, summary, loading, load, search, resetFilters, hand
       green_space_id: route.query.green_space_id ? Number(route.query.green_space_id) : null,
       plant_category: '',
       reason: '',
+      seedling_source: '',
+      source_missing: false,
       date_from: '',
       date_to: '',
     },
@@ -225,6 +276,10 @@ async function remove(row) {
 }
 
 .amount-missing {
+  color: #e6a23c;
+}
+
+.missing-source-hint {
   color: #e6a23c;
 }
 

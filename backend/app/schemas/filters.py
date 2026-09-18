@@ -100,10 +100,13 @@ def replacement_filters(args):
         value = _int(args, key)
         if value:
             filters[key] = value
-    for key, group_key in (("plant_category", "plant_category"), ("reason", "replacement_reason")):
+    for key, group_key in (("plant_category", "plant_category"),
+                           ("reason", "replacement_reason"),
+                           ("seedling_source", "seedling_source")):
         value = _enum(args, key, group_key)
         if value:
             filters[key] = value
+    filters["source_missing"] = _flag(args, "source_missing")
     keyword = _text(args, "keyword")
     if keyword:
         filters["keyword"] = keyword

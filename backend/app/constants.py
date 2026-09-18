@@ -123,6 +123,11 @@ OLD_PLANT_STATUS = EnumGroup("old_plant_status", [
     ("normal", "长势正常"),
 ])
 
+SEEDLING_SOURCE = EnumGroup("seedling_source", [
+    ("self_grown", "自产苗"),
+    ("purchased", "外购苗"),
+])
+
 MEASURE_UNIT = EnumGroup("measure_unit", [
     ("plant", "株"),
     ("square_meter", "平方米"),
@@ -143,6 +148,7 @@ ENUM_GROUPS = {
     "plant_category": PLANT_CATEGORY,
     "replacement_reason": REPLACEMENT_REASON,
     "old_plant_status": OLD_PLANT_STATUS,
+    "seedling_source": SEEDLING_SOURCE,
     "measure_unit": MEASURE_UNIT,
 }
 

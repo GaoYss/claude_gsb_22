@@ -75,8 +75,15 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="苗木来源" :error="fieldErrors.seedling_source">
+            <el-select v-model="form.seedling_source" clearable placeholder="自产苗 / 外购苗" style="width: 100%">
+              <el-option v-for="item in sourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="供苗单位" :error="fieldErrors.supplier">
-            <el-input v-model="form.supplier" placeholder="如：萧山苗木合作社" maxlength="96" />
+            <el-input v-model="form.supplier" :placeholder="supplierPlaceholder" maxlength="96" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -113,6 +120,7 @@ const { options: categoryOptions } = useEnumOptions('plant_category')
 const { options: reasonOptions } = useEnumOptions('replacement_reason')
 const { options: oldStatusOptions } = useEnumOptions('old_plant_status')
 const { options: unitOptions } = useEnumOptions('measure_unit')
+const { options: sourceOptions } = useEnumOptions('seedling_source')
 
 const formRef = ref(null)
 const visible = ref(false)
@@ -129,6 +137,12 @@ const computedAmount = computed(() => {
   if (form.unit_price === null || form.unit_price === undefined || form.unit_price === '') return '填写单价后自动核算'
   const amount = Number(form.quantity || 0) * Number(form.unit_price || 0)
   return formatCurrency(Number.isFinite(amount) ? amount : 0)
+})
+
+const supplierPlaceholder = computed(() => {
+  if (form.seedling_source === 'self_grown') return '如：本单位苗圃'
+  if (form.seedling_source === 'purchased') return '如：萧山苗木合作社'
+  return '请先选择苗木来源'
 })
 
 const rules = {
@@ -153,6 +167,7 @@ function emptyForm() {
     reason: 'dead',
     old_plant_status: '',
     replace_date: today(),
+    seedling_source: '',
     supplier: '',
     unit_price: null,
     operator: '',
@@ -194,6 +209,7 @@ async function submit() {
   if (!payload.replacement_no) delete payload.replacement_no
   if (!payload.maintenance_record_id) payload.maintenance_record_id = null
   if (!payload.old_plant_status) payload.old_plant_status = null
+  if (!payload.seedling_source) payload.seedling_source = null
   try {
     if (isEdit.value) {
       await plantReplacementApi.update(editingId.value, payload)
