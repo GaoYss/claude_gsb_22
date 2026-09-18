@@ -1,6 +1,6 @@
 """绿植更换记录模型。"""
 
-from ..constants import MEASURE_UNIT, OLD_PLANT_STATUS, PLANT_CATEGORY, REPLACEMENT_REASON
+from ..constants import MEASURE_UNIT, OLD_PLANT_STATUS, PLANT_CATEGORY, PLANT_SOURCE, REPLACEMENT_REASON
 from ..extensions import db
 from ..utils.dates import format_date, format_datetime
 from ..utils.numbers import to_float
@@ -31,9 +31,12 @@ class PlantReplacement(TimestampMixin, db.Model):
     reason = db.Column(db.String(32), nullable=False, index=True)
     old_plant_status = db.Column(db.String(16))
     replace_date = db.Column(db.Date, nullable=False, index=True)
+    plant_source = db.Column(db.String(16), index=True)
     supplier = db.Column(db.String(96))
     unit_price = db.Column(amount_column())
     amount = db.Column(amount_column())
+    # 来源信息不完整（未登记来源，或缺供苗单位/单价）时置位，供清单标记与补录统计
+    source_incomplete = db.Column(db.Boolean, nullable=False, default=False)
     operator = db.Column(db.String(64))
     remark = db.Column(db.Text)
 
@@ -70,7 +73,10 @@ class PlantReplacement(TimestampMixin, db.Model):
                 OLD_PLANT_STATUS.label(self.old_plant_status) if self.old_plant_status else None
             ),
             "replace_date": format_date(self.replace_date),
+            "plant_source": self.plant_source,
+            "plant_source_label": PLANT_SOURCE.label(self.plant_source) if self.plant_source else None,
             "supplier": self.supplier,
+            "source_incomplete": bool(self.source_incomplete),
             "unit_price": to_float(self.unit_price),
             "amount": to_float(self.amount),
             "operator": self.operator,

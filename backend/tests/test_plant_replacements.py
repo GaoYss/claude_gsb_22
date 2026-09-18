@@ -12,6 +12,7 @@ def replacement_payload(space_id, **overrides):
         "reason": "dead",
         "old_plant_status": "dead",
         "replace_date": "2026-03-16",
+        "plant_source": "purchased",
         "supplier": "萧山苗木合作社",
         "unit_price": 88.5,
         "operator": "王海涛",
@@ -29,6 +30,45 @@ def test_create_replacement_computes_amount(api, make_space):
     assert data["plant_category_label"] == "灌木"
     assert data["reason_label"] == "枯死更换"
     assert data["unit_label"] == "株"
+    assert data["plant_source"] == "purchased"
+    assert data["plant_source_label"] == "外购苗"
+    assert data["source_incomplete"] is False
+
+
+def test_missing_source_registration_is_flagged(api, make_space):
+    space = make_space()
+    # 未登记苗木来源
+    data = api.data(api.post(
+        "/api/v1/plant-replacements",
+        replacement_payload(space.id, plant_source=None, supplier=None, unit_price=None),
+    ), 201)
+    assert data["plant_source"] is None
+    assert data["plant_source_label"] is None
+    assert data["source_incomplete"] is True
+
+    # 已选自产苗但漏填单价，同样标记待补录
+    incomplete = api.data(api.post(
+        "/api/v1/plant-replacements",
+        replacement_payload(space.id, plant_source="self_grown",
+                            supplier="中心自有苗圃", unit_price=None),
+    ), 201)
+    assert incomplete["source_incomplete"] is True
+
+    # 补录单价后标记解除
+    fixed = api.data(api.put(f"/api/v1/plant-replacements/{incomplete['id']}", {
+        "green_space_id": space.id,
+        "plant_name": "红叶石楠",
+        "plant_category": "shrub",
+        "quantity": incomplete["quantity"],
+        "unit": "plant",
+        "reason": "dead",
+        "replace_date": "2026-03-16",
+        "plant_source": "self_grown",
+        "supplier": "中心自有苗圃",
+        "unit_price": 12,
+    }))
+    assert fixed["source_incomplete"] is False
+    assert fixed["amount"] == round(12 * incomplete["quantity"], 2)
 
 
 def test_amount_is_empty_without_unit_price(api, make_space):
@@ -104,6 +144,87 @@ def test_list_filters_by_green_space_and_reason(api, make_replacement, make_spac
                             reason="upgrade"))
     assert data["meta"]["total"] == 1
     assert data["items"][0]["reason"] == "upgrade"
+
+
+def test_list_filters_by_plant_source_and_incomplete(api, make_space):
+    space = make_space()
+    base = dict(
+        green_space_id=space.id,
+        plant_name="红叶石楠",
+        plant_category="shrub",
+        quantity=10,
+        unit="plant",
+        reason="dead",
+        replace_date="2026-03-16",
+    )
+
+    def _create(**overrides):
+        return api.data(api.post("/api/v1/plant-replacements", {**base, **overrides}), 201)
+
+    _create(plant_source="self_grown", supplier="中心自有苗圃", unit_price=12)
+    _create(plant_source="purchased", supplier="萧山苗木合作社", unit_price=80)
+    _create(plant_source="purchased", supplier="杭州城西园艺公司", unit_price=None)
+    _create(plant_source=None, supplier=None, unit_price=None)
+
+    self_grown = api.data(api.get("/api/v1/plant-replacements", plant_source="self_grown"))
+    assert self_grown["meta"]["total"] == 1
+    assert self_grown["items"][0]["plant_source"] == "self_grown"
+
+    purchased = api.data(api.get("/api/v1/plant-replacements", plant_source="purchased"))
+    assert purchased["meta"]["total"] == 2
+
+    incomplete = api.data(api.get("/api/v1/plant-replacements", source_incomplete="true"))
+    assert incomplete["meta"]["total"] == 2
+    assert all(item["source_incomplete"] for item in incomplete["items"])
+
+
+def test_summary_compares_sources_by_avg_price_and_quantity(api, make_space):
+    space = make_space()
+    base = dict(
+        green_space_id=space.id,
+        plant_name="香樟",
+        plant_category="tree",
+        unit="plant",
+        reason="dead",
+        replace_date="2026-03-16",
+    )
+
+    def _create(**overrides):
+        return api.data(api.post("/api/v1/plant-replacements", {**base, **overrides}), 201)
+
+    # 自产苗：数量 10×20 元 + 30×40 元，平均单价按金额加权 = 1400/40 = 35 元
+    _create(quantity=10, plant_source="self_grown", supplier="中心自有苗圃", unit_price=20)
+    _create(quantity=30, plant_source="self_grown", supplier="中心自有苗圃", unit_price=40)
+    # 外购苗：数量 5×100 元
+    _create(quantity=5, plant_source="purchased", supplier="萧山苗木合作社", unit_price=100)
+    # 来源未登记一条
+    _create(quantity=8, plant_source=None, supplier=None, unit_price=None)
+
+    data = api.data(api.get("/api/v1/plant-replacements/summary"))
+    assert data["total_count"] == 4
+    assert data["total_quantity"] == 53.0
+    assert data["source_incomplete_count"] == 1
+    assert data["source_missing_count"] == 1
+
+    by_source = {item["value"]: item for item in data["by_source"]}
+    self_grown = by_source["self_grown"]
+    assert self_grown["label"] == "自产苗"
+    assert self_grown["count"] == 2
+    assert self_grown["quantity"] == 40.0
+    assert self_grown["amount"] == 1400.0
+    assert self_grown["avg_unit_price"] == 35.0
+    assert self_grown["incomplete_count"] == 0
+
+    purchased = by_source["purchased"]
+    assert purchased["quantity"] == 5.0
+    assert purchased["avg_unit_price"] == 100.0
+
+    missing = by_source[None]
+    assert missing["label"] == "来源未登记"
+    assert missing["count"] == 1
+    assert missing["quantity"] == 8.0
+    assert missing["avg_unit_price"] is None
+    assert missing["incomplete_count"] == 1
 
 
 def test_delete_replacement(api, make_replacement):

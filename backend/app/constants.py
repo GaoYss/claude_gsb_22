@@ -97,6 +97,11 @@ WEATHER = EnumGroup("weather", [
 ])
 
 # ---------------------------------------------------------------- 绿植更换
+PLANT_SOURCE = EnumGroup("plant_source", [
+    ("self_grown", "自产苗"),
+    ("purchased", "外购苗"),
+])
+
 PLANT_CATEGORY = EnumGroup("plant_category", [
     ("tree", "乔木"),
     ("shrub", "灌木"),
@@ -140,6 +145,7 @@ ENUM_GROUPS = {
     "task_status": TASK_STATUS,
     "quality_result": QUALITY_RESULT,
     "weather": WEATHER,
+    "plant_source": PLANT_SOURCE,
     "plant_category": PLANT_CATEGORY,
     "replacement_reason": REPLACEMENT_REASON,
     "old_plant_status": OLD_PLANT_STATUS,

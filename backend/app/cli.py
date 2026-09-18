@@ -163,6 +163,7 @@ OLD_STATUS = ["dead", "dying", "diseased", "aging", "normal"]
 WEATHERS = ["sunny", "cloudy", "overcast", "rain", "windy"]
 WORKERS = ["王海涛", "李建民", "张凤英", "吴国强", "何丽萍", "赵春生", "孙明华", "许娟"]
 SUPPLIERS = ["萧山苗木合作社", "临安绿源苗圃", "余杭花卉基地", "杭州城西园艺公司"]
+SELF_SUPPLIERS = ["中心自有苗圃", "园林科研所育苗基地"]
 
 
 def register_cli(app):
@@ -273,7 +274,16 @@ def generate_demo_data(rng):
             if rng.random() < replace_chance:
                 for _ in range(rng.randint(1, 2)):
                     plant_name, category, spec, unit = rng.choice(PLANT_POOL)
-                    unit_price = round(rng.uniform(8, 220), 2)
+                    # 按序号稳定分配来源，保证演示数据同时覆盖自产/外购/缺失三种情形
+                    source_index = counts["plant_replacement"]
+                    if source_index % 6 == 5:
+                        source, supplier, unit_price = None, None, None
+                    elif source_index % 2 == 0:
+                        source, supplier = "self_grown", rng.choice(SELF_SUPPLIERS)
+                        unit_price = round(rng.uniform(6, 90), 2)
+                    else:
+                        source, supplier = "purchased", rng.choice(SUPPLIERS)
+                        unit_price = round(rng.uniform(40, 260), 2)
                     PlantReplacementService.create({
                         "green_space_id": space.id,
                         "maintenance_record_id": record.id,
@@ -285,7 +295,8 @@ def generate_demo_data(rng):
                         "reason": rng.choice(REASONS),
                         "old_plant_status": rng.choice(OLD_STATUS),
                         "replace_date": record_date + timedelta(days=rng.randint(0, 5)),
-                        "supplier": rng.choice(SUPPLIERS),
+                        "plant_source": source,
+                        "supplier": supplier,
                         "unit_price": unit_price,
                         "operator": rng.choice(WORKERS),
                     })

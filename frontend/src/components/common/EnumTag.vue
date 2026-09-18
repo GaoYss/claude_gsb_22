@@ -20,6 +20,7 @@ const TAG_TYPES = {
   task_priority: { low: 'info', medium: 'primary', high: 'warning', urgent: 'danger' },
   quality_result: { qualified: 'success', pending: 'warning', unqualified: 'danger' },
   maintenance_grade: { level1: 'success', level2: 'primary', level3: 'info' },
+  plant_source: { self_grown: 'success', purchased: 'primary' },
   replacement_reason: { dead: 'danger', disease: 'warning', aging: 'info', upgrade: 'primary' },
 }
 

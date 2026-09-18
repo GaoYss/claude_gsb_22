@@ -51,6 +51,15 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="苗木来源" prop="plant_source" :error="fieldErrors.plant_source">
+            <el-select v-model="form.plant_source" clearable placeholder="请选择自产苗 / 外购苗"
+                       style="width: 100%">
+              <el-option v-for="item in sourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+            <div class="form-hint">自产苗登记自有苗圃与内部计价，外购苗登记供货单位与采购单价；不登记将在清单中标记。</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="原植株状况" :error="fieldErrors.old_plant_status">
             <el-select v-model="form.old_plant_status" clearable placeholder="请选择" style="width: 100%">
               <el-option v-for="item in oldStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -76,7 +85,7 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="供苗单位" :error="fieldErrors.supplier">
-            <el-input v-model="form.supplier" placeholder="如：萧山苗木合作社" maxlength="96" />
+            <el-input v-model="form.supplier" :placeholder="supplierPlaceholder" maxlength="96" />
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -113,6 +122,7 @@ const { options: categoryOptions } = useEnumOptions('plant_category')
 const { options: reasonOptions } = useEnumOptions('replacement_reason')
 const { options: oldStatusOptions } = useEnumOptions('old_plant_status')
 const { options: unitOptions } = useEnumOptions('measure_unit')
+const { options: sourceOptions } = useEnumOptions('plant_source')
 
 const formRef = ref(null)
 const visible = ref(false)
@@ -124,6 +134,12 @@ const recordPreset = ref(null)
 const form = reactive(emptyForm())
 
 const isEdit = computed(() => editingId.value !== null)
+
+const supplierPlaceholder = computed(() => {
+  if (form.plant_source === 'self_grown') return '自产苗供苗单位，如：中心自有苗圃'
+  if (form.plant_source === 'purchased') return '外购苗供货单位，如：萧山苗木合作社'
+  return '请先选择苗木来源'
+})
 
 const computedAmount = computed(() => {
   if (form.unit_price === null || form.unit_price === undefined || form.unit_price === '') return '填写单价后自动核算'
@@ -153,6 +169,7 @@ function emptyForm() {
     reason: 'dead',
     old_plant_status: '',
     replace_date: today(),
+    plant_source: '',
     supplier: '',
     unit_price: null,
     operator: '',
@@ -194,6 +211,8 @@ async function submit() {
   if (!payload.replacement_no) delete payload.replacement_no
   if (!payload.maintenance_record_id) payload.maintenance_record_id = null
   if (!payload.old_plant_status) payload.old_plant_status = null
+  if (!payload.plant_source) payload.plant_source = null
+  if (!payload.supplier) payload.supplier = null
   try {
     if (isEdit.value) {
       await plantReplacementApi.update(editingId.value, payload)

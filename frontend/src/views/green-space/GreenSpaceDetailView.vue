@@ -110,6 +110,16 @@
             <el-table-column label="数量" width="110">
               <template #default="{ row }">{{ formatNumber(row.quantity) }} {{ row.unit_label }}</template>
             </el-table-column>
+            <el-table-column label="苗木来源" width="110">
+              <template #default="{ row }">
+                <EnumTag v-if="row.plant_source" group="plant_source"
+                         :value="row.plant_source" :label="row.plant_source_label" />
+                <span v-else style="color: #e6a23c">未登记</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="供苗单位" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.supplier || '-' }}</template>
+            </el-table-column>
             <el-table-column label="更换原因" width="120">
               <template #default="{ row }">
                 <EnumTag group="replacement_reason" :value="row.reason" :label="row.reason_label" />

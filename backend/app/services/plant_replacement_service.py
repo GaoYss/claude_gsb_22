@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 
 from ..constants import ENUM_GROUPS
 from ..errors import ValidationError
@@ -63,7 +63,10 @@ class PlantReplacementService(BaseService):
 
     @classmethod
     def apply_derived(cls, instance):
-        """金额 = 数量 × 单价；未填单价时留空，由前端提示补录。"""
+        """金额 = 数量 × 单价；未填单价时留空，由前端提示补录。
+
+        同步维护来源登记状态：未选择苗木来源，或缺供苗单位/单价时视为待补录。
+        """
 
         if instance.unit_price is None:
             instance.amount = None
@@ -71,6 +74,12 @@ class PlantReplacementService(BaseService):
             instance.amount = (
                 Decimal(str(instance.quantity or 0)) * Decimal(str(instance.unit_price))
             ).quantize(Decimal("0.01"))
+
+        instance.source_incomplete = not (
+            instance.plant_source
+            and (instance.supplier or "").strip()
+            and instance.unit_price is not None
+        )
 
     # ------------------------------------------------------------ 查询
     @classmethod
@@ -85,6 +94,10 @@ class PlantReplacementService(BaseService):
             query = query.filter(PlantReplacement.plant_category == filters["plant_category"])
         if filters.get("reason"):
             query = query.filter(PlantReplacement.reason == filters["reason"])
+        if filters.get("plant_source"):
+            query = query.filter(PlantReplacement.plant_source == filters["plant_source"])
+        if filters.get("source_incomplete"):
+            query = query.filter(PlantReplacement.source_incomplete.is_(True))
         if filters.get("date_from"):
             query = query.filter(PlantReplacement.replace_date >= filters["date_from"])
         if filters.get("date_to"):
@@ -148,6 +161,12 @@ class PlantReplacementService(BaseService):
                 func.count(PlantReplacement.id),
                 func.coalesce(func.sum(PlantReplacement.quantity), 0),
                 func.coalesce(func.sum(PlantReplacement.amount), 0),
+                func.coalesce(
+                    func.sum(case((PlantReplacement.source_incomplete.is_(True), 1), else_=0)), 0
+                ),
+                func.coalesce(
+                    func.sum(case((PlantReplacement.plant_source.is_(None), 1), else_=0)), 0
+                ),
             ),
             filters,
         ).one()
@@ -156,6 +175,65 @@ class PlantReplacementService(BaseService):
             "total_count": totals[0] or 0,
             "total_quantity": to_float(totals[1]) or 0,
             "total_amount": to_float(totals[2]) or 0,
+            "source_incomplete_count": int(totals[3] or 0),
+            "source_missing_count": int(totals[4] or 0),
             "by_category": _group(PlantReplacement.plant_category, "plant_category"),
             "by_reason": _group(PlantReplacement.reason, "replacement_reason"),
+            "by_source": cls._summary_by_source(filters),
         }
+
+    @classmethod
+    def _summary_by_source(cls, filters):
+        """按苗木来源对比：记录条数、使用数量、金额与平均单价（金额加权）。"""
+
+        priced = PlantReplacement.unit_price.isnot(None)
+        rows = (
+            cls._apply_filters(
+                db.session.query(
+                    PlantReplacement.plant_source,
+                    func.count(PlantReplacement.id),
+                    func.coalesce(func.sum(PlantReplacement.quantity), 0),
+                    func.coalesce(
+                        func.sum(case((priced, PlantReplacement.quantity), else_=0)), 0
+                    ),
+                    func.coalesce(func.sum(PlantReplacement.amount), 0),
+                    func.coalesce(
+                        func.sum(case((PlantReplacement.source_incomplete.is_(True), 1), else_=0)),
+                        0,
+                    ),
+                ),
+                filters,
+            )
+            .group_by(PlantReplacement.plant_source)
+            .all()
+        )
+
+        grouped = {source: rest for source, *rest in rows}
+        result = []
+        for value in ENUM_GROUPS["plant_source"].values:
+            count, quantity, priced_quantity, amount, incomplete = grouped.get(value, (0, 0, 0, 0, 0))
+            priced_quantity = to_float(priced_quantity) or 0
+            amount = to_float(amount) or 0
+            result.append({
+                "value": value,
+                "label": ENUM_GROUPS["plant_source"].label(value),
+                "count": count,
+                "quantity": to_float(quantity) or 0,
+                "priced_quantity": priced_quantity,
+                "amount": amount,
+                "avg_unit_price": round(amount / priced_quantity, 2) if priced_quantity else None,
+                "incomplete_count": int(incomplete or 0),
+            })
+
+        missing = grouped.get(None, (0, 0, 0, 0, 0))
+        result.append({
+            "value": None,
+            "label": "来源未登记",
+            "count": missing[0],
+            "quantity": to_float(missing[1]) or 0,
+            "priced_quantity": to_float(missing[2]) or 0,
+            "amount": to_float(missing[3]) or 0,
+            "avg_unit_price": None,
+            "incomplete_count": int(missing[4] or 0),
+        })
+        return result

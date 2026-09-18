@@ -1,6 +1,6 @@
 """绿植更换记录校验规则。"""
 
-from ..constants import MEASURE_UNIT, OLD_PLANT_STATUS, PLANT_CATEGORY, REPLACEMENT_REASON
+from ..constants import MEASURE_UNIT, OLD_PLANT_STATUS, PLANT_CATEGORY, PLANT_SOURCE, REPLACEMENT_REASON
 from .common import PayloadValidator
 
 
@@ -17,6 +17,7 @@ def validate_plant_replacement(payload):
         .enum("reason", "更换原因", group=REPLACEMENT_REASON, required=True)
         .enum("old_plant_status", "原植株状况", group=OLD_PLANT_STATUS)
         .date("replace_date", "更换日期", required=True)
+        .enum("plant_source", "苗木来源", group=PLANT_SOURCE)
         .string("supplier", "供苗单位", max_length=96)
         .number("unit_price", "单价", min_value=0, max_value=99999999)
         .string("operator", "登记人", max_length=64)

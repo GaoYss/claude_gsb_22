@@ -19,6 +19,11 @@
         <el-select v-model="filters.reason" placeholder="更换原因" clearable @change="search">
           <el-option v-for="item in reasonOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
+        <el-select v-model="filters.plant_source" placeholder="苗木来源" clearable style="width: 140px"
+                   @change="search">
+          <el-option v-for="item in sourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+        <el-checkbox v-model="onlyIncomplete" @change="onIncompleteChange">仅看待补录</el-checkbox>
         <el-date-picker v-model="dateRange" type="daterange" unlink-panels value-format="YYYY-MM-DD"
                         start-placeholder="更换日期起" end-placeholder="更换日期止" @change="onDateChange" />
         <el-button type="primary" :icon="'Search'" @click="search">查询</el-button>
@@ -37,6 +42,12 @@
                 :value="topReason ? topReason.label : '-'"
                 :hint="topReason ? `${formatNumber(topReason.count)} 次，${formatNumber(topReason.quantity)} 单位` : '暂无数据'"
                 icon="Warning" />
+      <StatCard label="来源待补录"
+                :value="formatNumber(summary?.source_incomplete_count ?? 0)" unit="条"
+                :hint="(summary?.source_missing_count ?? 0) > 0
+                  ? `其中 ${formatNumber(summary.source_missing_count)} 条未登记苗木来源`
+                  : '供苗单位或单价缺失'"
+                tone="warning" icon="EditPen" />
     </div>
 
     <div class="panel">
@@ -53,9 +64,19 @@
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand-detail">
+              <span><b>苗木来源：</b>
+                <template v-if="row.plant_source">
+                  <EnumTag group="plant_source" :value="row.plant_source" :label="row.plant_source_label" />
+                </template>
+                <span v-else class="text-missing">未登记</span>
+              </span>
               <span><b>原植株状况：</b>{{ row.old_plant_status_label || '-' }}</span>
-              <span><b>单价：</b>{{ formatCurrency(row.unit_price) }}</span>
-              <span><b>供苗单位：</b>{{ row.supplier || '-' }}</span>
+              <span><b>单价：</b>
+                <span :class="{ 'amount-missing': row.unit_price === null }">{{ formatCurrency(row.unit_price) }}</span>
+              </span>
+              <span><b>供苗单位：</b>
+                <span :class="{ 'text-missing': !row.supplier }">{{ row.supplier || '待补录' }}</span>
+              </span>
               <span><b>登记人：</b>{{ row.operator || '-' }}</span>
               <span><b>关联养护记录：</b>{{ row.record ? `${row.record.record_no}（${formatDate(row.record.record_date)}）` : '未关联' }}</span>
               <span><b>登记时间：</b>{{ formatDateTime(row.created_at) }}</span>
@@ -63,7 +84,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="replacement_no" label="编号" width="150" />
+        <el-table-column prop="replacement_no" label="编号" width="150">
+          <template #default="{ row }">
+            <div>{{ row.replacement_no }}</div>
+            <el-tag v-if="row.source_incomplete" type="warning" size="small" effect="plain">
+              {{ row.plant_source ? '来源信息待补录' : '来源未登记' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="所属绿地" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.green_space?.name || '-' }}</template>
         </el-table-column>
@@ -79,6 +107,21 @@
         <el-table-column label="数量" width="110" align="right">
           <template #default="{ row }">
             {{ formatNumber(row.quantity) }} {{ row.unit_label }}
+          </template>
+        </el-table-column>
+        <el-table-column label="苗木来源" width="105">
+          <template #default="{ row }">
+            <EnumTag v-if="row.plant_source" group="plant_source"
+                     :value="row.plant_source" :label="row.plant_source_label" />
+            <span v-else class="text-missing">未登记</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="供苗单位/单价" min-width="170">
+          <template #default="{ row }">
+            <div class="supplier-cell">
+              <span :class="{ 'text-missing': !row.supplier }">{{ row.supplier || '待补录' }}</span>
+              <span :class="{ 'amount-missing': row.unit_price === null }">{{ formatCurrency(row.unit_price) }}</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="更换原因" width="115">
@@ -111,6 +154,49 @@
         @current-change="handlePageChange"
         @size-change="handleSizeChange"
       />
+    </div>
+
+    <div class="panel">
+      <div class="table-toolbar">
+        <span class="panel-title">苗木来源对比</span>
+        <span class="summary-text">自产苗与外购苗的平均单价（按金额加权）与使用数量对比，按当前筛选条件统计</span>
+      </div>
+      <el-table :data="sourceRows" size="small" border empty-text="暂无数据"
+                :row-class-name="sourceRowClass">
+        <el-table-column prop="label" label="苗木来源" width="140">
+          <template #default="{ row }">
+            <EnumTag v-if="row.value" group="plant_source" :value="row.value" :label="row.label" />
+            <span v-else class="text-missing">{{ row.label }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="count" label="记录条数" width="100" />
+        <el-table-column label="使用数量" width="130">
+          <template #default="{ row }">{{ formatNumber(row.quantity) }}</template>
+        </el-table-column>
+        <el-table-column label="平均单价" min-width="200">
+          <template #default="{ row }">
+            <template v-if="row.avg_unit_price !== null">
+              <div class="price-bar">
+                <el-progress :percentage="avgPriceShare(row.avg_unit_price)" :stroke-width="12"
+                             :show-text="false" :color="row.value === 'self_grown' ? '#48a17a' : '#409eff'" />
+                <span>{{ formatCurrency(row.avg_unit_price) }}</span>
+              </div>
+            </template>
+            <span v-else class="text-missing">缺少单价，无法核算</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额合计" width="150">
+          <template #default="{ row }">{{ formatCurrency(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column label="来源待补录" width="110">
+          <template #default="{ row }">
+            <el-tag v-if="row.incomplete_count > 0" type="warning" size="small" effect="plain">
+              {{ row.incomplete_count }} 条
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <div class="panel">
@@ -159,9 +245,11 @@ import ReplacementFormDialog from './ReplacementFormDialog.vue'
 const route = useRoute()
 const formDialog = ref(null)
 const dateRange = ref([])
+const onlyIncomplete = ref(false)
 
 const { options: categoryOptions } = useEnumOptions('plant_category')
 const { options: reasonOptions } = useEnumOptions('replacement_reason')
+const { options: sourceOptions } = useEnumOptions('plant_source')
 
 const { filters, meta, items, summary, loading, load, search, resetFilters, handlePageChange, handleSizeChange } =
   useListQuery(plantReplacementApi.list, {
@@ -170,10 +258,32 @@ const { filters, meta, items, summary, loading, load, search, resetFilters, hand
       green_space_id: route.query.green_space_id ? Number(route.query.green_space_id) : null,
       plant_category: '',
       reason: '',
+      plant_source: '',
+      source_incomplete: false,
       date_from: '',
       date_to: '',
     },
   })
+
+const sourceRows = computed(() => summary.value?.by_source || [])
+
+const maxAvgPrice = computed(() =>
+  Math.max(0, ...sourceRows.value.map((row) => Number(row.avg_unit_price) || 0))
+)
+
+function avgPriceShare(price) {
+  if (!maxAvgPrice.value) return 0
+  return Math.round((Number(price) / maxAvgPrice.value) * 100)
+}
+
+function sourceRowClass({ row }) {
+  return row.value === null ? 'source-row--missing' : ''
+}
+
+function onIncompleteChange(checked) {
+  filters.source_incomplete = checked
+  search()
+}
 
 const topReason = computed(() => {
   const rows = [...(summary.value?.by_reason || [])]
@@ -195,6 +305,7 @@ function onDateChange(value) {
 
 function reset() {
   dateRange.value = []
+  onlyIncomplete.value = false
   resetFilters()
 }
 
@@ -226,6 +337,31 @@ async function remove(row) {
 
 .amount-missing {
   color: #e6a23c;
+}
+
+.text-missing {
+  color: #e6a23c;
+}
+
+.supplier-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.price-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .el-progress {
+    flex: 1;
+  }
+}
+
+:deep(.source-row--missing) {
+  background-color: #fdf6ec;
 }
 
 .expand-detail {
